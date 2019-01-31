@@ -19,7 +19,7 @@ description              : "Welcome to my site. On this site you will find my se
                                especially to teachers of students with disabilities and ELLs."
 url                      : "http://johnboniello.com"
 baseurl                  : "/behaviortracker"
-repository               :  johnboniello/behaviortracker
+repository               :  johnboniello
 teaser                   : # path of fallback teaser image, e.g. "/assets/images/500x300.png"
 # breadcrumbs            : false # true, false (default)
 words_per_minute         : 200
