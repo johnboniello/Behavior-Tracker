@@ -1,0 +1,11 @@
+title: Extended Time Calculator
+author: John Boniello
+email: johnboniello@gmail.com
+show_downloads: "true"
+description: site for calculator
+twitter_username: johnboniello
+github_username:  johnboniello
+
+# Build settings
+markdown: kramdown
+theme: jekyll-theme-slate
