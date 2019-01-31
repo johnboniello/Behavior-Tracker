@@ -10,7 +10,7 @@ minimal_mistakes_skin    : "dirt" # "air", "aqua", "contrast", "dark", , "neon",
 
 # Site Settings
 locale                   : "en-US"
-title                    : "John's Site"
+title                    : "Behavior Referral Tracker"
 title_separator          : "-"
 name                     : "John Boniello"
 description              : "Welcome to my site. On this site you will find my semi-regular research roundup, occasional blog posts,
@@ -18,7 +18,7 @@ description              : "Welcome to my site. On this site you will find my se
                               this means summarizing research and writing programs that might be helpful,
                                especially to teachers of students with disabilities and ELLs."
 url                      : "http://johnboniello.com"
-baseurl                  : "/Behavior Referral Tracker"
+baseurl                  : "/behaviortracker"
 repository               :  johnboniello/behaviortracker
 teaser                   : # path of fallback teaser image, e.g. "/assets/images/500x300.png"
 # breadcrumbs            : false # true, false (default)
