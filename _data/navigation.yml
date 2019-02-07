@@ -1,14 +1,14 @@
 # main links
 main:
   - title: "Home"
-    url: http://johnboniello.com/
+    url: https://johnboniello.com/
   - title: "Behavior Referral Tracker"
-    url: http://johnboniello.com/Behavior-Tracker
+    url: https://johnboniello.com/Behavior-Tracker
   - title: "Extended Time Calculator"
-    url: http://johnboniello.com/Extended-Time-Calculator/
+    url: https://johnboniello.com/Extended-Time-Calculator/
   - title: "Research Roundup"
-    url: http://johnboniello.com/Research-round-up/
+    url: https://johnboniello.com/Research-round-up/
   - title: "Blogs"
-    url: http://johnboniello.com/blog2/
+    url: https://johnboniello.com/blog2/
   # - title: "Sitemap"
   #   url: /sitemap/
