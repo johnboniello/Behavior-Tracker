@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <?!= include('Styles'); ?>
+</head>
+<body>
+  <div id="app">
+    <p class="muted">Loading…</p>
+  </div>
+
+<script>
+  /*
+   * Single-page app. Apps Script web apps run inside a sandboxed frame, so
+   * plain <a href="?..."> links between "pages" don't reliably work — instead
+   * everything lives in this one loaded page, and "navigation" is just
+   * swapping what's rendered into #app via google.script.run calls.
+   */
+  function escapeHtml(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[c]));
+  }
+  function fmtDate(d) {
+    if (!d) return '';
+    const dt = new Date(d);
+    return isNaN(dt) ? '' : dt.toLocaleDateString() + ' ' + dt.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+  }
+  function setApp(html) { document.getElementById('app').innerHTML = html; }
+  function renderError(err) {
+    setApp('<div class="error">' + escapeHtml(err.message || err) + '</div>');
+  }
+
+  /*
+   * Wraps a render function (a withSuccessHandler callback) so that if IT
+   * throws — a bug in the HTML-building code, not a server error — the page
+   * shows that error instead of being stuck on "Loading…" forever.
+   * withFailureHandler only catches errors thrown *on the server*; it can't
+   * see exceptions thrown while we're building the page from the data the
+   * server already successfully returned. This is what actually surfaces
+   * those instead of silently freezing.
+   */
+  function guard_(renderFn) {
+    return function (data) {
+      try {
+        renderFn(data);
+      } catch (err) {
+        console.error(err);
+        renderError(err);
+      }
+    };
+  }
+
+  /* ---------------- Dashboard view ---------------- */
+
+  function showDashboard() {
+    setApp('<p class="muted">Loading…</p>');
+    google.script.run.withSuccessHandler(guard_(renderDashboard)).withFailureHandler(renderError).api_getDashboardData();
+  }
+
+  function renderDashboard(data) {
+    const ctx = data.ctx;
+    const canManage = ctx.role === 'building_admin' || ctx.role === 'district_admin';
+
+    let html = '';
+    html += '<div class="topbar">';
+    html += '<div><h1>Behavior Referral Tracker</h1>';
+    html += '<span class="muted">' + escapeHtml(ctx.name) + ' &middot; ' + escapeHtml(ctx.role) +
+            (ctx.buildingId ? ' &middot; ' + escapeHtml(ctx.buildingId) : '') + '</span></div>';
+    html += '<div>';
+    if (canManage) html += '<button class="btn secondary" style="margin-right:0.5rem;" onclick="showAnalytics()">Analytics</button>';
+    html += '<button class="btn" onclick="showSubmit()">+ New referral</button></div>';
+    html += '</div>';
+
+    if (canManage) html += '<div id="report"></div>';
+
+    html += '<h2>Referrals</h2>';
+    html += data.referrals.length === 0
+      ? '<p class="muted">Nothing to show yet.</p>'
+      : renderTable(data.referrals, ctx, data.assignableStaff);
+
+    setApp(html);
+
+    if (canManage) {
+      loadReport(ctx);
+    }
+    wireUpActions();
+  }
+
+  function renderTable(referrals, ctx, assignableStaff) {
+    const canManage = ctx.role === 'building_admin' || ctx.role === 'district_admin';
+    let html = '<table><thead><tr>' +
+      '<th>Student</th><th>Building</th><th>Type</th><th>Location</th><th>Period</th><th>Date</th><th>Status</th><th>Assigned to</th>' +
+      (canManage || ctx.role === 'counselor' ? '<th>Actions</th>' : '') +
+      '</tr></thead><tbody>';
+
+    referrals.forEach(r => {
+      html += '<tr>';
+      html += '<td>' + escapeHtml(r.student_name) + '</td>';
+      html += '<td>' + escapeHtml(r.building_id) + '</td>';
+      html += '<td>' + escapeHtml(r.referral_type) + '</td>';
+      html += '<td>' + escapeHtml(r.location || '—') + '</td>';
+      html += '<td>' + escapeHtml(r.period || '—') + '</td>';
+      html += '<td>' + fmtDate(r.date_time) + '</td>';
+      html += '<td><span class="badge ' + escapeHtml(r.status) + '">' + escapeHtml(r.status) + '</span></td>';
+      html += '<td>' + escapeHtml(r.assigned_to_email || '—') + '</td>';
+
+      if (canManage || ctx.role === 'counselor') {
+        html += '<td>';
+        if (canManage && r.status === 'open') {
+          html += '<div class="row">';
+          html += '<select data-assign-for="' + r.referral_id + '"><option value="">Assign to…</option>';
+          assignableStaff.forEach(s => {
+            html += '<option value="' + escapeHtml(s.email) + '">' + escapeHtml(s.name) + '</option>';
+          });
+          html += '</select>';
+          html += '<button class="btn secondary" data-assign-btn="' + r.referral_id + '">Assign</button>';
+          html += '</div>';
+        }
+        if (r.status !== 'closed' && (canManage || (ctx.role === 'counselor' && r.assigned_to_email === ctx.email))) {
+          html += '<div class="row" style="margin-top:0.4rem;">';
+          html += '<input type="text" placeholder="Resolution notes" data-notes-for="' + r.referral_id + '">';
+          html += '<button class="btn secondary" data-close-btn="' + r.referral_id + '">Close</button>';
+          html += '</div>';
+        }
+        if (r.status === 'closed' && r.resolution_notes) {
+          html += '<span class="muted">' + escapeHtml(r.resolution_notes) + '</span>';
+        }
+        html += '</td>';
+      }
+      html += '</tr>';
+    });
+
+    html += '</tbody></table>';
+    return html;
+  }
+
+  function wireUpActions() {
+    document.querySelectorAll('[data-assign-btn]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const id = btn.getAttribute('data-assign-btn');
+        const select = document.querySelector('[data-assign-for="' + id + '"]');
+        if (!select.value) { alert('Choose someone to assign this to first.'); return; }
+        btn.disabled = true;
+        google.script.run
+          .withSuccessHandler(showDashboard)
+          .withFailureHandler(err => { alert(err.message || err); btn.disabled = false; })
+          .api_assignReferral(id, select.value);
+      });
+    });
+    document.querySelectorAll('[data-close-btn]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const id = btn.getAttribute('data-close-btn');
+        const notes = document.querySelector('[data-notes-for="' + id + '"]').value;
+        btn.disabled = true;
+        google.script.run
+          .withSuccessHandler(showDashboard)
+          .withFailureHandler(err => { alert(err.message || err); btn.disabled = false; })
+          .api_closeReferral(id, notes);
+      });
+    });
+  }
+
+  function loadReport() {
+    google.script.run.withSuccessHandler(r => {
+      try {
+        const el = document.getElementById('report');
+        if (!el) return;
+        let html = '<div class="card"><h2 style="margin-top:0;">Summary</h2><div class="report-grid">';
+        html += statBlock('Total referrals', r.totalReferrals);
+        html += statBlock('Open', r.byStatus.open || 0);
+        html += statBlock('Assigned', r.byStatus.assigned || 0);
+        html += statBlock('Closed', r.byStatus.closed || 0);
+        html += '</div></div>';
+        el.innerHTML = html;
+      } catch (err) {
+        console.error(err);
+      }
+    }).withFailureHandler(err => console.error(err)).api_getStandardReport();
+  }
+
+  function statBlock(label, value) {
+    return '<div><div style="font-size:1.4rem;font-weight:700;">' + value +
+      '</div><div class="muted">' + escapeHtml(label) + '</div></div>';
+  }
+
+  /* ---------------- Analytics view ---------------- */
+  /*
+   * A filterable set of bar charts (location, period/activity, time of day,
+   * day of week, grade, referral type — and building, for a district admin)
+   * built from this project's own data. An optional "include demographics"
+   * toggle joins a separate sheet you point at LIVE, at report time, exactly
+   * like the old equity report did — nothing demographic is ever stored here.
+   */
+
+  let analyticsFilterData_ = null; // cached so "Reset filters" can redraw the shell without a round-trip
+
+  function showAnalytics() {
+    setApp('<p class="muted">Loading…</p>');
+    google.script.run.withSuccessHandler(guard_(renderAnalyticsShell)).withFailureHandler(renderError).api_getAnalyticsFilters();
+  }
+
+  function selectHtml_(id, label, options) {
+    let html = '<div><label for="' + id + '">' + escapeHtml(label) + '</label><select id="' + id + '">';
+    options.forEach(o => {
+      html += '<option value="' + escapeHtml(o.value) + '">' + escapeHtml(o.label) + '</option>';
+    });
+    html += '</select></div>';
+    return html;
+  }
+
+  function renderAnalyticsShell(data) {
+    analyticsFilterData_ = data;
+    const ctx = data.ctx;
+
+    let html = '<div class="topbar"><h1>Analytics</h1>' +
+      '<button class="btn secondary" onclick="showDashboard()">&larr; Back to dashboard</button></div>';
+
+    html += '<div class="card"><div class="filter-bar">';
+    if (ctx.role === 'district_admin') {
+      html += selectHtml_('f_building', 'Building', [{ value: '', label: 'All buildings' }].concat(
+        data.buildings.map(b => ({ value: b.building_id, label: b.building_name || b.building_id }))));
+    }
+    html += selectHtml_('f_type', 'Referral type', [{ value: '', label: 'All types' }].concat(
+      data.referralTypes.map(t => ({ value: t.code, label: t.label }))));
+    html += selectHtml_('f_location', 'Location', [{ value: '', label: 'All locations' }].concat(
+      data.locations.map(l => ({ value: l.code, label: l.label }))));
+    html += selectHtml_('f_period', 'Period / activity', [{ value: '', label: 'All periods' }].concat(
+      data.periods.map(p => ({ value: p.code, label: p.label }))));
+    html += selectHtml_('f_grade', 'Grade', [{ value: '', label: 'All grades' }].concat(
+      ['K', '1', '2', '3', '4', '5', '6'].map(g => ({ value: g, label: 'Grade ' + g }))));
+    html += selectHtml_('f_day', 'Day of week', [{ value: '', label: 'All days' }].concat(
+      ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'].map(d => ({ value: d, label: d }))));
+    html += selectHtml_('f_timeblock', 'Time of day', [{ value: '', label: 'All day' }].concat(
+      ['Before 9am', '9–11am', '11am–1pm', '1–3pm', 'After 3pm'].map(t => ({ value: t, label: t }))));
+    html += '<div><label for="f_from">From date</label><input type="date" id="f_from"></div>';
+    html += '<div><label for="f_to">To date</label><input type="date" id="f_to"></div>';
+    html += '</div>';
+
+    if (ctx.role === 'district_admin') {
+      html += '<div class="row" style="margin-top:0.5rem;">';
+      html += '<label style="display:flex;align-items:center;gap:0.4rem;font-weight:400;margin:0;">' +
+        '<input type="checkbox" id="f_demoToggle" style="width:auto;margin:0;" onchange="toggleDemoFilter()"> ' +
+        'Include demographics (from an SIS export)</label>';
+      html += '</div>';
+      html += '<div id="demoFilterRow" style="display:none;margin-top:0.5rem;" class="filter-bar">' +
+        '<div><label for="f_demoSheetId">Demographics sheet ID</label>' +
+        '<input type="text" id="f_demoSheetId" placeholder="Paste the Sheet ID"></div>' +
+        '<div><label>&nbsp;</label><button class="btn secondary" type="button" onclick="loadDemoFields()">Load fields</button></div>' +
+        '<div id="demoFieldPicker"></div>' +
+        '</div>';
+      html += '<p class="muted" style="margin-top:0.4rem;">Nothing from that sheet is stored — it\'s read live for this report and discarded. Restricted to district admins.</p>';
+    }
+
+    html += '<div class="row" style="margin-top:0.75rem;">' +
+      '<button class="btn" onclick="runAnalytics()">Update charts</button>' +
+      '<button class="btn secondary" onclick="resetAnalyticsFilters()">Reset filters</button></div>';
+    html += '</div>'; // end filter card
+
+    html += '<div id="analyticsResults"><p class="muted">Set filters above and click “Update charts,” or click it now to see everything.</p></div>';
+
+    setApp(html);
+  }
+
+  function toggleDemoFilter() {
+    const on = document.getElementById('f_demoToggle').checked;
+    document.getElementById('demoFilterRow').style.display = on ? 'grid' : 'none';
+  }
+
+  function loadDemoFields() {
+    const id = document.getElementById('f_demoSheetId').value.trim();
+    const picker = document.getElementById('demoFieldPicker');
+    if (!id) return;
+    picker.innerHTML = '<p class="muted">Loading…</p>';
+    google.script.run
+      .withSuccessHandler(guard_(fields => {
+        let html = '<div><label for="f_demoField">Breakdown by</label><select id="f_demoField">' +
+          '<option value="">(just show matched total)</option>';
+        fields.forEach(f => { html += '<option value="' + escapeHtml(f) + '">' + escapeHtml(f) + '</option>'; });
+        html += '</select></div>';
+        picker.innerHTML = html;
+      }))
+      .withFailureHandler(err => {
+        picker.innerHTML = '<div class="error">' + escapeHtml(err.message || err) + '</div>';
+      })
+      .api_getDemographicFields(id);
+  }
+
+  function collectAnalyticsFilters_() {
+    const val = id => { const el = document.getElementById(id); return el ? el.value : ''; };
+    const filters = {
+      buildingId: val('f_building'),
+      referralTypeCode: val('f_type'),
+      locationCode: val('f_location'),
+      periodCode: val('f_period'),
+      grade: val('f_grade'),
+      dayOfWeek: val('f_day'),
+      timeBlock: val('f_timeblock'),
+      dateFrom: val('f_from'),
+      dateTo: val('f_to')
+    };
+    const demoToggle = document.getElementById('f_demoToggle');
+    if (demoToggle && demoToggle.checked) {
+      filters.demographicsSheetId = val('f_demoSheetId');
+      filters.demographicField = val('f_demoField');
+    }
+    return filters;
+  }
+
+  function runAnalytics() {
+    const el = document.getElementById('analyticsResults');
+    el.innerHTML = '<p class="muted">Running…</p>';
+    google.script.run
+      .withSuccessHandler(guard_(renderAnalyticsResults))
+      .withFailureHandler(err => { el.innerHTML = '<div class="error">' + escapeHtml(err.message || err) + '</div>'; })
+      .api_getAnalyticsReport(collectAnalyticsFilters_());
+  }
+
+  function resetAnalyticsFilters() {
+    if (analyticsFilterData_) renderAnalyticsShell(analyticsFilterData_);
+  }
+
+  function renderAnalyticsResults(r) {
+    let html = '<p class="muted">' + r.totalReferrals + ' referral(s) match these filters.</p>';
+    html += '<div class="analytics-grid">';
+    html += renderBarChart_('By location', r.byLocation);
+    html += renderBarChart_('By period / activity', r.byPeriod);
+    html += renderBarChart_('By time of day', r.byTimeBlock);
+    html += renderBarChart_('By day of week', r.byDayOfWeek);
+    html += renderBarChart_('By grade', r.byGrade);
+    html += renderBarChart_('By referral type', r.byType);
+    if (analyticsFilterData_ && analyticsFilterData_.ctx.role === 'district_admin') {
+      html += renderBarChart_('By building', r.byBuilding);
+    }
+    if (r.demographics) html += renderBarChart_('Demographic breakdown', r.demographics);
+    html += '</div>';
+    document.getElementById('analyticsResults').innerHTML = html;
+  }
+
+  /** Shared horizontal-bar-chart renderer: one hue, sorted desc, value shown at the end of each bar. */
+  function renderBarChart_(title, dataObj) {
+    const entries = Object.keys(dataObj || {}).map(k => [k, dataObj[k]]).sort((a, b) => b[1] - a[1]);
+    let html = '<div class="chart-card"><h3>' + escapeHtml(title) + '</h3>';
+    if (entries.length === 0) {
+      html += '<p class="muted">No data for this filter.</p>';
+    } else {
+      const max = entries.reduce((m, e) => Math.max(m, e[1]), 0) || 1;
+      html += '<div class="bar-chart">';
+      entries.forEach(([label, value]) => {
+        const pct = Math.max(2, Math.round((value / max) * 100));
+        html += '<div class="bar-row" title="' + escapeHtml(label) + ': ' + value + '">' +
+          '<div class="bar-label">' + escapeHtml(label) + '</div>' +
+          '<div class="bar-track"><div class="bar-fill" style="width:' + pct + '%"></div></div>' +
+          '<div class="bar-value">' + value + '</div></div>';
+      });
+      html += '</div>';
+    }
+    html += '</div>';
+    return html;
+  }
+
+  /* ---------------- Submit-referral view ---------------- */
+
+  function showSubmit() {
+    setApp('<p class="muted">Loading…</p>');
+    google.script.run.withSuccessHandler(guard_(renderSubmit)).withFailureHandler(renderError).api_getSubmitFormData();
+  }
+
+  function renderSubmit(data) {
+    let html = '<div class="topbar"><h1>New referral</h1>' +
+      '<button class="btn secondary" onclick="showDashboard()">&larr; Back to dashboard</button></div>';
+    html += '<div class="card" style="max-width:480px;">';
+
+    if (data.students.length === 0) {
+      html += '<p class="error">No students are set up for your building yet. Ask your district admin to add some to the Students sheet.</p>';
+    } else {
+      html += '<label for="student">Student</label><select id="student">';
+      data.students.forEach(s => {
+        html += '<option value="' + escapeHtml(s.student_id) + '">' +
+          escapeHtml(s.first_name + ' ' + s.last_name + ' (grade ' + s.grade + ')') + '</option>';
+      });
+      html += '</select>';
+
+      html += '<label for="type">Referral type</label><select id="type">';
+      data.referralTypes.forEach(t => {
+        html += '<option value="' + escapeHtml(t.code) + '">' + escapeHtml(t.label) + '</option>';
+      });
+      html += '</select>';
+
+      html += '<label for="location">Where did this happen?</label><select id="location">';
+      data.locations.forEach(l => {
+        html += '<option value="' + escapeHtml(l.code) + '">' + escapeHtml(l.label) + '</option>';
+      });
+      html += '</select>';
+
+      html += '<label for="period">What period/activity?</label><select id="period">';
+      data.periods.forEach(p => {
+        html += '<option value="' + escapeHtml(p.code) + '">' + escapeHtml(p.label) + '</option>';
+      });
+      html += '</select>';
+
+      html += '<label for="incidentTime">What time did it happen? (optional)</label>';
+      html += '<input type="time" id="incidentTime">';
+
+      html += '<label for="description">What happened</label>';
+      html += '<textarea id="description" rows="4" placeholder="Optional details"></textarea>';
+
+      html += '<button class="btn" id="submitBtn">Submit referral</button>';
+      html += '<div id="formMsg"></div>';
+    }
+    html += '</div>';
+    setApp(html);
+
+    const btn = document.getElementById('submitBtn');
+    if (btn) {
+      btn.addEventListener('click', () => {
+        btn.disabled = true;
+        const formData = {
+          student_id: document.getElementById('student').value,
+          referral_type_code: document.getElementById('type').value,
+          location_code: document.getElementById('location').value,
+          period_code: document.getElementById('period').value,
+          incident_time: document.getElementById('incidentTime').value,
+          description: document.getElementById('description').value
+        };
+        google.script.run
+          .withSuccessHandler(() => {
+            document.getElementById('formMsg').innerHTML =
+              '<div class="success">Referral submitted. The building admin has been notified.</div>';
+            setTimeout(showDashboard, 1200);
+          })
+          .withFailureHandler(err => {
+            document.getElementById('formMsg').innerHTML = '<div class="error">' + escapeHtml(err.message || err) + '</div>';
+            btn.disabled = false;
+          })
+          .api_createReferral(formData);
+      });
+    }
+  }
+
+  showDashboard();
+</script>
+</body>
+</html>
