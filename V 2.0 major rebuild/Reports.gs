@@ -167,6 +167,7 @@ function dayOfWeekName_(dateValue) {
 
 /** Buckets a "HH:MM" incident time into a school-day block for charting. */
 function timeBlockFor_(timeStr) {
+  timeStr = toTimeOrEmpty_(timeStr);
   if (!timeStr) return '(unspecified)';
   const hour = parseInt(String(timeStr).split(':')[0], 10);
   if (isNaN(hour)) return '(unspecified)';

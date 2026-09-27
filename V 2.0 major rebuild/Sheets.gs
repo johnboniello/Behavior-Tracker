@@ -163,3 +163,26 @@ function toIsoOrEmpty_(value) {
   const dt = (value instanceof Date) ? value : new Date(value);
   return isNaN(dt.getTime()) ? '' : dt.toISOString();
 }
+
+/**
+ * Converts a sheet cell that should hold a plain "HH:MM" time-of-day string
+ * (e.g. incident_time) back into that string. Google Sheets will sometimes
+ * silently reformat a cell like "14:30" into an actual time value, and Apps
+ * Script then reads that cell back as a JS Date (on Sheets' 1899-12-30
+ * time-only epoch) instead of the string that was written. Same rule as
+ * toIsoOrEmpty_ above applies: a raw Date object ANYWHERE in a
+ * google.script.run return value can make the ENTIRE payload arrive as
+ * `null` on the client instead of throwing a visible error — so any field
+ * that is meant to be a plain time-of-day string must be run through this
+ * before it's returned to the browser.
+ */
+function toTimeOrEmpty_(value) {
+  if (!value) return '';
+  if (value instanceof Date) {
+    if (isNaN(value.getTime())) return '';
+    const hh = String(value.getHours()).padStart(2, '0');
+    const mm = String(value.getMinutes()).padStart(2, '0');
+    return hh + ':' + mm;
+  }
+  return String(value);
+}

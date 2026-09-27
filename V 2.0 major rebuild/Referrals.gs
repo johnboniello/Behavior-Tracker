@@ -80,7 +80,7 @@ function getReferralsForUser(ctx) {
         referral_type: type.label || r.referral_type_code,
         location: location.label || r.location_code || '',
         period: period.label || r.period_code || '',
-        incident_time: r.incident_time || '',
+        incident_time: toTimeOrEmpty_(r.incident_time),
         date_time: toIsoOrEmpty_(r.date_time),
         description: r.description,
         status: r.status,
