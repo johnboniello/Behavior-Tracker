@@ -99,13 +99,16 @@ function readSheet_(name) {
   if (values.length < 2) return [];
   const headers = values[0];
   const rows = values.slice(1);
+  // Number rows BEFORE dropping blank ones: _row must be the real sheet row,
+  // or a cleared row above would shift every update onto the wrong record.
   return rows
-    .filter(row => row.some(cell => cell !== '' && cell !== null))
     .map((row, i) => {
       const obj = { _row: i + 2 }; // 1-indexed sheet row, header is row 1
       headers.forEach((h, idx) => { obj[h] = row[idx]; });
-      return obj;
-    });
+      return { obj: obj, blank: !row.some(cell => cell !== '' && cell !== null) };
+    })
+    .filter(r => !r.blank)
+    .map(r => r.obj);
 }
 
 /**
