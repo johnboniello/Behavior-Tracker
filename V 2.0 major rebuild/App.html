@@ -117,7 +117,7 @@
           html += '<button class="btn secondary" data-assign-btn="' + r.referral_id + '">Assign</button>';
           html += '</div>';
         }
-        if (r.status !== 'closed' && (canManage || (ctx.role === 'counselor' && r.assigned_to_email === ctx.email))) {
+        if (r.status !== 'closed' && (canManage || (ctx.role === 'counselor' && String(r.assigned_to_email || '').trim().toLowerCase() === ctx.email))) {
           html += '<div class="row" style="margin-top:0.4rem;">';
           html += '<input type="text" placeholder="Resolution notes" data-notes-for="' + r.referral_id + '">';
           html += '<button class="btn secondary" data-close-btn="' + r.referral_id + '">Close</button>';

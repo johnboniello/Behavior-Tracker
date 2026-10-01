@@ -47,6 +47,10 @@ function sameValue_(a, b) {
 function sameBuilding_(a, b) {
   return sameValue_(a, b);
 }
+/** Emails come from hand-typed sheet cells and Session; compare ignoring case/whitespace. */
+function sameEmail_(a, b) {
+  return sameValue_(a || '', b || '');
+}
 
 function getReferralsForUser(ctx) {
   const referrals = readSheet_(SHEET_NAMES.REFERRALS);
@@ -61,9 +65,9 @@ function getReferralsForUser(ctx) {
   } else if (ctx.role === 'building_admin') {
     visible = referrals.filter(r => sameBuilding_(r.building_id, ctx.buildingId));
   } else if (ctx.role === 'counselor') {
-    visible = referrals.filter(r => r.assigned_to_email === ctx.email && sameBuilding_(r.building_id, ctx.buildingId));
+    visible = referrals.filter(r => sameEmail_(r.assigned_to_email, ctx.email) && sameBuilding_(r.building_id, ctx.buildingId));
   } else { // teacher
-    visible = referrals.filter(r => r.referring_staff_email === ctx.email);
+    visible = referrals.filter(r => sameEmail_(r.referring_staff_email, ctx.email));
   }
 
   return visible
@@ -118,7 +122,7 @@ function closeReferral(referralId, resolutionNotes, ctx) {
   const canClose =
     ctx.role === 'district_admin' ||
     (ctx.role === 'building_admin' && sameBuilding_(record.building_id, ctx.buildingId)) ||
-    (ctx.role === 'counselor' && record.assigned_to_email === ctx.email);
+    (ctx.role === 'counselor' && sameEmail_(record.assigned_to_email, ctx.email));
   if (!canClose) throw new Error('You do not have permission to close this referral.');
 
   updateRow_(SHEET_NAMES.REFERRALS, record._row, {

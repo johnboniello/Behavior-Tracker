@@ -13,7 +13,7 @@ function runInitialSetup() {
 
   // Register whoever is running Setup as a district_admin, if not already staff.
   const me = Session.getActiveUser().getEmail();
-  const existing = findRecord_(SHEET_NAMES.STAFF, 'email', me);
+  const existing = readSheet_(SHEET_NAMES.STAFF).find(s => sameEmail_(s.email, me));
   if (!existing) {
     appendRow_(SHEET_NAMES.STAFF, {
       email: me,

@@ -69,11 +69,11 @@ function getAnalyticsReport(filters, ctx) {
     referrals = referrals.filter(r => sameValue_((students[r.student_id] || {}).grade, filters.grade));
   }
   if (filters.dateFrom) {
-    const from = new Date(filters.dateFrom);
+    const from = parseLocalDate_(filters.dateFrom);
     referrals = referrals.filter(r => new Date(r.date_time) >= from);
   }
   if (filters.dateTo) {
-    const to = new Date(filters.dateTo);
+    const to = parseLocalDate_(filters.dateTo);
     to.setHours(23, 59, 59, 999);
     referrals = referrals.filter(r => new Date(r.date_time) <= to);
   }
@@ -152,6 +152,17 @@ function loadDemographics_(demographicsSheetId) {
     demoByStudent[id] = record;
   });
   return demoByStudent;
+}
+
+/**
+ * Parses a "yyyy-mm-dd" filter value as midnight in the script's time zone.
+ * new Date("yyyy-mm-dd") means midnight UTC, which in a US time zone is the
+ * evening before — so the "to" day got cut off and "from" reached back a day.
+ */
+function parseLocalDate_(ymd) {
+  const m = String(ymd).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return new Date(ymd);
+  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
 }
 
 function bump_(map, key) {

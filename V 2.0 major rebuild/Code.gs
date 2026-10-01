@@ -41,13 +41,14 @@ function getCurrentUserContext_() {
   if (!email) {
     throw new Error('Could not determine your identity. Make sure you are logged into your district Google account.');
   }
-  const staff = findRecord_(SHEET_NAMES.STAFF, 'email', email);
+  // Emails are typed into the Staff sheet by hand, so match case-insensitively.
+  const staff = readSheet_(SHEET_NAMES.STAFF).find(s => sameEmail_(s.email, email));
   if (!staff) {
     throw new Error(
       email + ' is not registered in the Staff sheet yet. Ask your district admin to add you before you can use this app.'
     );
   }
-  return { email: email, role: staff.role, buildingId: staff.building_id, name: staff.name };
+  return { email: email.trim().toLowerCase(), role: staff.role, buildingId: staff.building_id, name: staff.name };
 }
 
 /* ---------------- Client-callable API (google.script.run targets) ---------------- */
